@@ -1,0 +1,61 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Time    : 2024/2/27 2:54
+# @Author  : HuJiwei
+# @File    : image_test_diff_300W.py
+# @Software: PyCharm
+# @Project: AlignDiff_5_attention_dehaze
+from pathlib import Path
+
+from config.align_diff import AlignDiff
+from lib import logger
+from lib.tester import Tester
+from lib.script import get_dataloader, create_model, create_diffusion
+from utils import dist_util
+
+
+def main():
+    # 1. Get config info
+    config = AlignDiff("./")
+    config.init_instance()
+    log_dir = config.log_dir
+
+    # 2. Get trained model and diffusion
+    logger.log("Getting trained model and diffusion...")
+    model = create_model(config)
+    test_diffusion = create_diffusion(config, "test")
+
+    checkpoint = dist_util.load_state_dict(config.val_model_path, map_location="cpu")
+    model.load_state_dict(checkpoint["net"])
+
+    # model.load_state_dict(
+    #     dist_util.load_state_dict(config.val_model_path, map_location="cpu")
+    # )
+
+    model.to(dist_util.dev())
+    model.eval()
+
+    # 3. Creating data loader
+    logger.log("Creating test data loader...")
+    test_loader = get_dataloader(config, "test")
+
+    # 4. Set random seed
+    seed = 1234 if config.seed is None else config.seed
+
+    # 5. Create sample path
+    logger.log("Creating sample log dir")
+    (Path(log_dir) / "major_vote").mkdir(exist_ok=True)
+
+    # 6. Sampling
+    logger.log("Sampling...")
+    Tester(
+        config=config,
+        model=model,
+        diffusion=test_diffusion,
+        loader=test_loader,
+        logger=logger
+    ).test()
+
+
+if __name__ == "__main__":
+    main()
